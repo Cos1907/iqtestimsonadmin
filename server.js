@@ -34,12 +34,8 @@ const logger = setupLogger();
 // Global error handler to catch path-to-regexp errors
 process.on('uncaughtException', (error) => {
   if (error.message && error.message.includes('path-to-regexp')) {
-    logger.error('Uncaught path-to-regexp error:', {
-      message: error.message,
-      stack: error.stack,
-      timestamp: new Date().toISOString()
-    });
-    // Don't exit the process, just log the error
+    // Silently ignore path-to-regexp errors - they are not critical
+    // These are usually from external bots or malicious requests
     return;
   }
   logger.error('Uncaught Exception:', error);
@@ -48,12 +44,7 @@ process.on('uncaughtException', (error) => {
 
 process.on('unhandledRejection', (reason, promise) => {
   if (reason && reason.message && reason.message.includes('path-to-regexp')) {
-    logger.error('Unhandled path-to-regexp rejection:', {
-      message: reason.message,
-      stack: reason.stack,
-      timestamp: new Date().toISOString()
-    });
-    // Don't exit the process, just log the error
+    // Silently ignore path-to-regexp rejections - they are not critical
     return;
   }
   logger.error('Unhandled Rejection at:', promise, 'reason:', reason);
@@ -78,14 +69,7 @@ http.createServer = function(...args) {
         req.url.includes('://') ||
         !req.url.startsWith('/')
       )) {
-        logger.warn('Blocked problematic request at HTTP level:', {
-          url: req.url,
-          method: req.method,
-          userAgent: req.headers['user-agent'],
-          ip: req.connection.remoteAddress,
-          timestamp: new Date().toISOString()
-        });
-        
+        // Silently block problematic requests without logging
         res.writeHead(400, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({
           error: 'Invalid request',
