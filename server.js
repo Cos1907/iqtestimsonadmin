@@ -30,6 +30,35 @@ const PORT = process.env.PORT || 5000;
 // Logger Setup
 const logger = setupLogger();
 
+// Global error handler to catch path-to-regexp errors
+process.on('uncaughtException', (error) => {
+  if (error.message && error.message.includes('path-to-regexp')) {
+    logger.error('Uncaught path-to-regexp error:', {
+      message: error.message,
+      stack: error.stack,
+      timestamp: new Date().toISOString()
+    });
+    // Don't exit the process, just log the error
+    return;
+  }
+  logger.error('Uncaught Exception:', error);
+  process.exit(1);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  if (reason && reason.message && reason.message.includes('path-to-regexp')) {
+    logger.error('Unhandled path-to-regexp rejection:', {
+      message: reason.message,
+      stack: reason.stack,
+      timestamp: new Date().toISOString()
+    });
+    // Don't exit the process, just log the error
+    return;
+  }
+  logger.error('Unhandled Rejection at:', promise, 'reason:', reason);
+  process.exit(1);
+});
+
 // Helmet for HTTP security headers
 app.use(helmet());
 
@@ -149,12 +178,40 @@ app.use((req, res, next) => {
         });
         return res.redirect('/');
       }
+      
+      // Check for the specific problematic URL pattern
+      if (req.originalUrl.includes('git.new') || req.originalUrl.includes('pathToRegexpError')) {
+        logger.warn('Blocked problematic URL pattern:', {
+          originalUrl: req.originalUrl,
+          method: req.method,
+          userAgent: req.get('User-Agent')
+        });
+        return res.status(400).json({
+          error: 'Invalid URL pattern',
+          message: 'The requested URL contains invalid patterns'
+        });
+      }
+      
+      // Additional check for any URL that might cause path-to-regexp issues
+      if (req.originalUrl.includes('://') || req.originalUrl.includes('git.new')) {
+        logger.warn('Blocked URL with protocol or git.new:', {
+          originalUrl: req.originalUrl,
+          method: req.method
+        });
+        return res.status(400).json({
+          error: 'Invalid URL format',
+          message: 'The requested URL format is not allowed'
+        });
+      }
     }
     
     next();
   } catch (error) {
     logger.error('Error in request sanitization:', error);
-    return res.redirect('/');
+    return res.status(400).json({
+      error: 'Request validation failed',
+      message: 'The request could not be processed'
+    });
   }
 });
 
