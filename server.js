@@ -116,6 +116,48 @@ app.use((req, res, next) => {
   next();
 });
 
+// Request sanitization middleware to prevent path-to-regexp errors
+app.use((req, res, next) => {
+  try {
+    // Sanitize the URL to prevent path-to-regexp errors
+    if (req.originalUrl) {
+      // Check for malformed URLs that contain full URLs
+      if (req.originalUrl.includes('http://') || req.originalUrl.includes('https://')) {
+        logger.warn('Malformed URL detected, redirecting to root:', {
+          originalUrl: req.originalUrl,
+          method: req.method,
+          userAgent: req.get('User-Agent')
+        });
+        return res.redirect('/');
+      }
+      
+      // Check for URLs that don't start with /
+      if (!req.originalUrl.startsWith('/')) {
+        logger.warn('Invalid URL format, redirecting to root:', {
+          originalUrl: req.originalUrl,
+          method: req.method
+        });
+        return res.redirect('/');
+      }
+      
+      // Check for URLs with invalid characters that might cause path-to-regexp issues
+      const invalidChars = /[<>:"|?*]/;
+      if (invalidChars.test(req.originalUrl)) {
+        logger.warn('URL contains invalid characters, redirecting to root:', {
+          originalUrl: req.originalUrl,
+          method: req.method
+        });
+        return res.redirect('/');
+      }
+    }
+    
+    next();
+  } catch (error) {
+    logger.error('Error in request sanitization:', error);
+    return res.redirect('/');
+  }
+});
+
 // Static file serving for uploads
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
@@ -142,111 +184,37 @@ const setupRoutes = () => {
   try {
     logger.info('Loading routes...');
     
-    // Load routes one by one to identify the problematic one
-    try {
-      app.use('/api/auth', authRoutes);
-      logger.info('Auth routes loaded');
-    } catch (error) {
-      logger.error('Error loading auth routes:', error.message);
-    }
+    // Wrap route loading in try-catch to catch path-to-regexp errors
+    const loadRoute = (path, routeModule, name) => {
+      try {
+        app.use(path, routeModule);
+        logger.info(`${name} routes loaded`);
+      } catch (error) {
+        logger.error(`Error loading ${name} routes:`, error.message);
+        if (error.message && error.message.includes('path-to-regexp')) {
+          logger.error(`Path-to-regexp error in ${name} routes:`, {
+            error: error.message,
+            stack: error.stack
+          });
+        }
+      }
+    };
     
-    try {
-      app.use('/api/admin', adminRoutes);
-      logger.info('Admin routes loaded');
-    } catch (error) {
-      logger.error('Error loading admin routes:', error.message);
-    }
-    
-    try {
-      app.use('/api/tests', testRoutes);
-      logger.info('Test routes loaded');
-    } catch (error) {
-      logger.error('Error loading test routes:', error.message);
-    }
-    
-    try {
-      app.use('/api/questions', questionRoutes);
-      logger.info('Question routes loaded');
-    } catch (error) {
-      logger.error('Error loading question routes:', error.message);
-    }
-    
-    try {
-      app.use('/api/categories', categoryRoutes);
-      logger.info('Category routes loaded');
-    } catch (error) {
-      logger.error('Error loading category routes:', error.message);
-    }
-    
-    try {
-      app.use('/api/blog', blogRoutes);
-      logger.info('Blog routes loaded');
-    } catch (error) {
-      logger.error('Error loading blog routes:', error.message);
-    }
-    
-    try {
-      app.use('/api/notifications', notificationRoutes);
-      logger.info('Notification routes loaded');
-    } catch (error) {
-      logger.error('Error loading notification routes:', error.message);
-    }
-    
-    try {
-      app.use('/api/test-results', testResultRoutes);
-      logger.info('Test result routes loaded');
-    } catch (error) {
-      logger.error('Error loading test result routes:', error.message);
-    }
-    
-    try {
-      app.use('/api/subscriptions', subscriptionRoutes);
-      logger.info('Subscription routes loaded');
-    } catch (error) {
-      logger.error('Error loading subscription routes:', error.message);
-    }
-    
-    try {
-      app.use('/api/subscription-plans', subscriptionPlanRoutes);
-      logger.info('Subscription plan routes loaded');
-    } catch (error) {
-      logger.error('Error loading subscription plan routes:', error.message);
-    }
-    
-    try {
-      app.use('/api/iq-rankings', iqRankingsRoutes);
-      logger.info('IQ ranking routes loaded');
-    } catch (error) {
-      logger.error('Error loading IQ ranking routes:', error.message);
-    }
-    
-    try {
-      app.use('/api/campaigns', campaignRoutes);
-      logger.info('Campaign routes loaded');
-    } catch (error) {
-      logger.error('Error loading campaign routes:', error.message);
-    }
-    
-    try {
-      app.use('/api/pixels', pixelRoutes);
-      logger.info('Pixel routes loaded');
-    } catch (error) {
-      logger.error('Error loading pixel routes:', error.message);
-    }
-    
-    try {
-      app.use('/api/pages', pageRoutes);
-      logger.info('Page routes loaded');
-    } catch (error) {
-      logger.error('Error loading page routes:', error.message);
-    }
-    
-    try {
-      app.use('/api/admin-activities', adminActivityRoutes);
-      logger.info('Admin activity routes loaded');
-    } catch (error) {
-      logger.error('Error loading admin activity routes:', error.message);
-    }
+    loadRoute('/api/auth', authRoutes, 'Auth');
+    loadRoute('/api/admin', adminRoutes, 'Admin');
+    loadRoute('/api/tests', testRoutes, 'Test');
+    loadRoute('/api/questions', questionRoutes, 'Question');
+    loadRoute('/api/categories', categoryRoutes, 'Category');
+    loadRoute('/api/blog', blogRoutes, 'Blog');
+    loadRoute('/api/notifications', notificationRoutes, 'Notification');
+    loadRoute('/api/test-results', testResultRoutes, 'Test result');
+    loadRoute('/api/subscriptions', subscriptionRoutes, 'Subscription');
+    loadRoute('/api/subscription-plans', subscriptionPlanRoutes, 'Subscription plan');
+    loadRoute('/api/iq-rankings', iqRankingsRoutes, 'IQ ranking');
+    loadRoute('/api/campaigns', campaignRoutes, 'Campaign');
+    loadRoute('/api/pixels', pixelRoutes, 'Pixel');
+    loadRoute('/api/pages', pageRoutes, 'Page');
+    loadRoute('/api/admin-activities', adminActivityRoutes, 'Admin activity');
     
     logger.info('All routes loaded successfully');
   } catch (error) {
