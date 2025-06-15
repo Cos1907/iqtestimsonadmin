@@ -244,39 +244,98 @@ const setupRoutes = () => {
     // Wrap route loading in try-catch to catch path-to-regexp errors
     const loadRoute = (path, routeModule, name) => {
       try {
+        logger.info(`Attempting to load ${name} routes at path: ${path}`);
+        
+        // Validate route module before loading
+        if (!routeModule || typeof routeModule !== 'function') {
+          logger.error(`Invalid route module for ${name}:`, {
+            type: typeof routeModule,
+            path: path,
+            name: name
+          });
+          return false;
+        }
+        
         app.use(path, routeModule);
-        logger.info(`${name} routes loaded`);
+        logger.info(`${name} routes loaded successfully`);
       } catch (error) {
-        logger.error(`Error loading ${name} routes:`, error.message);
+        logger.error(`Error loading ${name} routes:`, {
+          error: error.message,
+          stack: error.stack,
+          path: path,
+          name: name
+        });
+        
         if (error.message && error.message.includes('path-to-regexp')) {
           logger.error(`Path-to-regexp error in ${name} routes:`, {
             error: error.message,
-            stack: error.stack
+            stack: error.stack,
+            path: path,
+            name: name
           });
+          
+          // Try to identify the problematic route
+          if (routeModule && routeModule.stack) {
+            logger.error(`Route stack for ${name}:`, routeModule.stack);
+          }
         }
+        
+        // Continue loading other routes even if one fails
+        return false;
       }
+      return true;
     };
     
-    loadRoute('/api/auth', authRoutes, 'Auth');
-    loadRoute('/api/admin', adminRoutes, 'Admin');
-    loadRoute('/api/tests', testRoutes, 'Test');
-    loadRoute('/api/questions', questionRoutes, 'Question');
-    loadRoute('/api/categories', categoryRoutes, 'Category');
-    loadRoute('/api/blog', blogRoutes, 'Blog');
-    loadRoute('/api/notifications', notificationRoutes, 'Notification');
-    loadRoute('/api/test-results', testResultRoutes, 'Test result');
-    loadRoute('/api/subscriptions', subscriptionRoutes, 'Subscription');
-    loadRoute('/api/subscription-plans', subscriptionPlanRoutes, 'Subscription plan');
-    loadRoute('/api/iq-rankings', iqRankingsRoutes, 'IQ ranking');
-    loadRoute('/api/campaigns', campaignRoutes, 'Campaign');
-    loadRoute('/api/pixels', pixelRoutes, 'Pixel');
-    loadRoute('/api/pages', pageRoutes, 'Page');
-    loadRoute('/api/admin-activities', adminActivityRoutes, 'Admin activity');
+    // Load routes one by one to isolate the problematic one
+    const routes = [
+      { path: '/api/auth', module: authRoutes, name: 'Auth' },
+      { path: '/api/admin', module: adminRoutes, name: 'Admin' },
+      { path: '/api/tests', module: testRoutes, name: 'Test' },
+      { path: '/api/questions', module: questionRoutes, name: 'Question' },
+      { path: '/api/categories', module: categoryRoutes, name: 'Category' },
+      { path: '/api/blog', module: blogRoutes, name: 'Blog' },
+      { path: '/api/notifications', module: notificationRoutes, name: 'Notification' },
+      { path: '/api/test-results', module: testResultRoutes, name: 'Test result' },
+      { path: '/api/subscriptions', module: subscriptionRoutes, name: 'Subscription' },
+      { path: '/api/subscription-plans', module: subscriptionPlanRoutes, name: 'Subscription plan' },
+      { path: '/api/iq-rankings', module: iqRankingsRoutes, name: 'IQ ranking' },
+      { path: '/api/campaigns', module: campaignRoutes, name: 'Campaign' },
+      { path: '/api/pixels', module: pixelRoutes, name: 'Pixel' },
+      { path: '/api/pages', module: pageRoutes, name: 'Page' },
+      { path: '/api/admin-activities', module: adminActivityRoutes, name: 'Admin activity' }
+    ];
     
-    logger.info('All routes loaded successfully');
+    let successfulRoutes = 0;
+    let failedRoutes = 0;
+    
+    for (const route of routes) {
+      const result = loadRoute(route.path, route.module, route.name);
+      if (result) {
+        successfulRoutes++;
+      } else {
+        failedRoutes++;
+      }
+      
+      // Add a small delay between route loading to help identify the problematic one
+      setTimeout(() => {}, 100);
+    }
+    
+    logger.info(`Route loading completed. Successful: ${successfulRoutes}, Failed: ${failedRoutes}`);
+    
+    if (failedRoutes > 0) {
+      logger.warn(`Some routes failed to load. Check the logs above for details.`);
+    } else {
+      logger.info('All routes loaded successfully');
+    }
   } catch (error) {
-    logger.error('Error loading routes:', error.message);
-    logger.error('Full error:', error);
+    logger.error('Critical error in route loading:', {
+      message: error.message,
+      stack: error.stack,
+      timestamp: new Date().toISOString()
+    });
+    
+    // Don't exit the process, just log the error
+    logger.error('Route loading failed, but server will continue running');
   }
 };
 
