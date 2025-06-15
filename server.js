@@ -21,6 +21,7 @@ const adminActivityRoutes = require('./routes/adminActivityRoutes');
 const { setupLogger } = require('./utils/logger');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
+const http = require('http');
 
 dotenv.config();
 
@@ -58,6 +59,47 @@ process.on('unhandledRejection', (reason, promise) => {
   logger.error('Unhandled Rejection at:', promise, 'reason:', reason);
   process.exit(1);
 });
+
+// Very early request interceptor to catch problematic URLs before they reach Express
+const originalCreateServer = http.createServer;
+
+http.createServer = function(...args) {
+  const server = originalCreateServer.apply(this, args);
+  
+  const originalEmit = server.emit;
+  server.emit = function(event, ...args) {
+    if (event === 'request') {
+      const [req, res] = args;
+      
+      // Check for problematic URLs at the HTTP level
+      if (req.url && (
+        req.url.includes('git.new') || 
+        req.url.includes('pathToRegexpError') ||
+        req.url.includes('://') ||
+        !req.url.startsWith('/')
+      )) {
+        logger.warn('Blocked problematic request at HTTP level:', {
+          url: req.url,
+          method: req.method,
+          userAgent: req.headers['user-agent'],
+          ip: req.connection.remoteAddress,
+          timestamp: new Date().toISOString()
+        });
+        
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          error: 'Invalid request',
+          message: 'The requested URL is not allowed'
+        }));
+        return;
+      }
+    }
+    
+    return originalEmit.apply(this, [event, ...args]);
+  };
+  
+  return server;
+};
 
 // Helmet for HTTP security headers
 app.use(helmet());
