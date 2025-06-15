@@ -92,30 +92,32 @@ app.use(cors({
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
+// Request logging middleware to help debug path-to-regexp errors
+app.use((req, res, next) => {
+  // Log all requests to help identify problematic ones
+  logger.info('Incoming request:', {
+    method: req.method,
+    url: req.originalUrl,
+    userAgent: req.get('User-Agent'),
+    referer: req.get('Referer'),
+    ip: req.ip,
+    timestamp: new Date().toISOString()
+  });
+  
+  // Check for potentially problematic URLs
+  if (req.originalUrl && (req.originalUrl.includes('http://') || req.originalUrl.includes('https://'))) {
+    logger.warn('Potentially problematic URL detected:', {
+      url: req.originalUrl,
+      method: req.method,
+      userAgent: req.get('User-Agent')
+    });
+  }
+  
+  next();
+});
+
 // Static file serving for uploads
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
-
-// URL validation middleware to prevent path-to-regexp errors
-app.use((req, res, next) => {
-  try {
-    // Check for malformed URLs that might cause path-to-regexp errors
-    if (req.url && (req.url.includes('http://') || req.url.includes('https://'))) {
-      logger.warn(`Malformed URL detected: ${req.url}`);
-      return res.status(400).json({ error: 'Malformed URL detected' });
-    }
-    
-    // Validate URL format
-    if (req.url && !req.url.startsWith('/')) {
-      logger.warn(`Invalid URL format: ${req.url}`);
-      return res.status(400).json({ error: 'Invalid URL format' });
-    }
-    
-    next();
-  } catch (error) {
-    logger.error('URL validation error:', error);
-    return res.status(400).json({ error: 'URL validation failed' });
-  }
-});
 
 // MongoDB Connection with better error handling
 const connectDB = async () => {
@@ -299,6 +301,24 @@ app.use('*', (req, res) => {
 
 // Error handling middleware with detailed logging
 app.use((err, req, res, next) => {
+  // Handle path-to-regexp errors specifically
+  if (err.message && err.message.includes('path-to-regexp')) {
+    logger.error('Path-to-regexp error detected:', {
+      message: err.message,
+      url: req.originalUrl,
+      method: req.method,
+      userAgent: req.get('User-Agent'),
+      referer: req.get('Referer'),
+      timestamp: new Date().toISOString()
+    });
+    
+    return res.status(400).json({
+      error: 'Invalid route format',
+      message: 'The requested URL contains invalid characters',
+      timestamp: new Date().toISOString()
+    });
+  }
+  
   logger.error('Unhandled error:', {
     message: err.message,
     stack: err.stack,
