@@ -23,6 +23,7 @@ const { setupLogger } = require('../utils/logger');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 
+// Environment variables
 dotenv.config();
 
 const app = express();
@@ -87,29 +88,29 @@ app.use(cors({
 }));
 
 // Middleware
-app.use(express.json());
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+
+// Static file serving for uploads
+app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
+
 app.use((req, res, next) => {
   logger.info(`${req.method} ${req.originalUrl}`);
   next();
 });
 
-// MongoDB Connection with better error handling
+// MongoDB Connection
 const connectDB = async () => {
   try {
-    if (!process.env.MONGO_URI) {
-      throw new Error('MONGO_URI environment variable is not set');
-    }
-    
-    await mongoose.connect(process.env.MONGO_URI);
-    
-    logger.info('MongoDB connected successfully');
+    const mongoURI = process.env.MONGO_URI || 'mongodb://localhost:27017/quizaki';
+    await mongoose.connect(mongoURI, {
+      useNewUrlParser: true,
+      useUnifiedTopology: true,
+    });
+    console.log('[INFO] MongoDB connected successfully');
   } catch (error) {
-    logger.error('MongoDB connection error:', error.message);
-    logger.error('Full error:', error);
-    // Don't exit in Vercel environment
-    if (process.env.NODE_ENV !== 'production') {
-      process.exit(1);
-    }
+    console.error('[ERROR] MongoDB connection error:', error.message);
+    process.exit(1);
   }
 };
 

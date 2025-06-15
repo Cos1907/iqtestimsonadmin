@@ -50,7 +50,8 @@ const allowedOrigins = [
   'https://mobil.iqtestim.com', // Admin panel domain
   'https://panel.iqtestim.com',
   'https://iqtestim.com',
-  'https://iqtestim-backend.vercel.app' // Backend domain
+  'https://iqtestim-backend.vercel.app', // Backend domain
+  'https://iqtestimadminpanel.vercel.app'
 ];
 
 app.use(cors({
@@ -88,11 +89,11 @@ app.use(cors({
 }));
 
 // Middleware
-app.use(express.json());
-app.use((req, res, next) => {
-  logger.info(`${req.method} ${req.originalUrl}`);
-  next();
-});
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+
+// Static file serving for uploads
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // URL validation middleware to prevent path-to-regexp errors
 app.use((req, res, next) => {
@@ -119,16 +120,14 @@ app.use((req, res, next) => {
 // MongoDB Connection with better error handling
 const connectDB = async () => {
   try {
-    if (!process.env.MONGO_URI) {
-      throw new Error('MONGO_URI environment variable is not set');
-    }
-    
-    await mongoose.connect(process.env.MONGO_URI);
-    
-    logger.info('MongoDB connected successfully');
+    const mongoURI = process.env.MONGO_URI || 'mongodb://localhost:27017/quizaki';
+    await mongoose.connect(mongoURI, {
+      useNewUrlParser: true,
+      useUnifiedTopology: true,
+    });
+    console.log('[INFO] MongoDB connected successfully');
   } catch (error) {
-    logger.error('MongoDB connection error:', error.message);
-    logger.error('Full error:', error);
+    console.error('[ERROR] MongoDB connection error:', error.message);
     process.exit(1);
   }
 };
@@ -256,43 +255,40 @@ const setupRoutes = () => {
 
 setupRoutes();
 
-// Basic route with health check
-app.get('/', (req, res) => {
-  try {
-    res.json({
-      message: 'API is running...',
-      timestamp: new Date().toISOString(),
-      environment: process.env.NODE_ENV || 'development',
-      mongoStatus: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected'
-    });
-  } catch (error) {
-    logger.error('Error in root route:', error);
-    res.status(500).json({ error: 'Internal server error', details: error.message });
-  }
-});
-
 // Health check endpoint
 app.get('/health', (req, res) => {
-  try {
-    const health = {
-      status: 'OK',
-      timestamp: new Date().toISOString(),
-      uptime: process.uptime(),
-      environment: process.env.NODE_ENV || 'development',
-      mongoStatus: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
-      memory: process.memoryUsage()
-    };
-    
-    if (mongoose.connection.readyState !== 1) {
-      health.status = 'ERROR';
-      health.mongoError = 'MongoDB not connected';
+  res.json({ 
+    status: 'OK', 
+    message: 'IQ Test API is running',
+    timestamp: new Date().toISOString(),
+    environment: process.env.NODE_ENV || 'development'
+  });
+});
+
+// Root endpoint
+app.get('/', (req, res) => {
+  res.json({ 
+    message: 'IQ Test API Server',
+    version: '1.0.0',
+    endpoints: {
+      auth: '/api/auth',
+      admin: '/api/admin',
+      tests: '/api/tests',
+      questions: '/api/questions',
+      categories: '/api/categories',
+      blog: '/api/blog',
+      notifications: '/api/notifications',
+      testResults: '/api/test-results',
+      subscriptions: '/api/subscriptions',
+      subscriptionPlans: '/api/subscription-plans',
+      iqRankings: '/api/iq-rankings',
+      campaigns: '/api/campaigns',
+      pixels: '/api/pixels',
+      pages: '/api/pages',
+      adminActivities: '/api/admin-activities',
+      health: '/health'
     }
-    
-    res.json(health);
-  } catch (error) {
-    logger.error('Error in health check:', error);
-    res.status(500).json({ error: 'Health check failed', details: error.message });
-  }
+  });
 });
 
 // 404 handler
@@ -341,7 +337,7 @@ if (process.env.NODE_ENV !== 'production' && process.env.NODE_ENV !== 'test') {
   app.listen(PORT, '0.0.0.0', () => {
     logger.info(`Server running on port ${PORT}`);
     logger.info(`Environment: ${process.env.NODE_ENV || 'development'}`);
-    logger.info(`MongoDB URI: ${process.env.MONGO_URI ? 'Set' : 'Not set'}`);
+    logger.info(`Health check: http://localhost:${PORT}/health`);
   });
 }
 
